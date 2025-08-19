@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Life Audio PWA</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+<style>
+  body { background:#000; color:#fff; font-family:sans-serif; text-align:center; margin:0; }
+  canvas { background:#111; display:block; margin:1rem auto; }
+  button, select, input { margin:5px; padding:10px; font-size:16px; }
+  .control-panel { display:flex; flex-wrap: wrap; justify-content:center; margin:10px; }
+  .control-panel label { margin:5px; }
+</style>
+</head>
+<body>
+<h1>Game of Life + Audio</h1>
+<canvas id="life"></canvas>
+<div class="control-panel">
+  <button id="start">Start Game + Audio</button>
+  <button id="toggleAudio">Audio ON/OFF</button>
+  <button id="togglePlay">Play/Pause</button>
+  <label>Escala: 
+    <select id="scale">
+      <option value="major">Mayor</option>
+      <option value="minor">Menor</option>
+      <option value="pentatonic">Pentatónica</option>
+    </select>
+  </label>
+  <label>Intervalo (semitonos): <input type="number" id="interval" value="0" min="-12" max="12"></label>
+  <label>Velocidad (ms): <input type="number" id="speed" value="200" min="50" max="1000"></label>
+  <label>Grid size: <input type="number" id="gridSize" value="40" min="10" max="100"></label>
+</div>
+<script>
+let canvas = document.getElementById('life');
+let ctx = canvas.getContext('2d');
+let size = 40;
+let cell = 10;
+canvas.width = size * cell;
+canvas.height = size * cell;
+let grid = Array.from({length:size}, ()=>Array(size).fill(0));
+let playing = false;
+let audioOn = false;
+let speed = 200;
+let scaleType = 'major';
+let interval = 0;
+
+// Glider inicial
+grid[10][10] = 1;
+grid[11][11] = 1;
+grid[12][9] = 1;
+grid[12][10] = 1;
+grid[12][11] = 1;
+
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+
+function draw(){
+  ctx.fillStyle='#111';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<size;y++){
+    for(let x=0;x<size;x++){
+      if(grid[y][x]){
+        ctx.fillStyle='lime';
+        ctx.fillRect(x*cell,y*cell,cell,cell);
+      }
+    }
+  }
+}
+
+function step(){
+  let newGrid = grid.map(a=>[...a]);
+  for(let y=0;y<size;y++){
+    for(let x=0;x<size;x++){
+      let count=0;
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          if(dx||dy){
+            let ny=(y+dy+size)%size, nx=(x+dx+size)%size;
+            count+=grid[ny][nx];
+          }
+        }
+      }
+      if(grid[y][x]&&(count<2||count>3)) newGrid[y][x]=0;
+      if(!grid[y][x]&&count==3){
+        newGrid[y][x]=1;
+        if(audioOn) playNote((y*size+x)%60+40);
+      }
+    }
+  }
+  grid=newGrid;
+  draw();
+}
+
+function loop(){
+  if(playing) step();
+  setTimeout(loop, speed);
+}
+loop();
+
+function playNote(midi){
+  let adjustedMidi = midi + parseInt(interval);
+  let freq = 440*Math.pow(2,(adjustedMidi-69)/12);
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type='sine';
+  osc.frequency.value=freq;
+  osc.connect(gain).connect(audioCtx.destination);
+  gain.gain.setValueAtTime(0.05,audioCtx.currentTime);
+  osc.start();
+  osc.stop(audioCtx.currentTime+0.2);
+}
+
+canvas.addEventListener('click', e=>{
+  const x=Math.floor(e.offsetX/cell);
+  const y=Math.floor(e.offsetY/cell);
+  grid[y][x]=grid[y][x]?0:1;
+  draw();
+});
+
+// Controles
+document.getElementById('start').addEventListener('click', ()=>{
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  playing=true;
+});
+document.getElementById('toggleAudio').addEventListener('click', ()=>{audioOn=!audioOn;});
+document.getElementById('togglePlay').addEventListener('click', ()=>{playing=!playing;});
+
+document.getElementById('scale').addEventListener('change', e=>{scaleType=e.target.value;});
+document.getElementById('interval').addEventListener('input', e=>{interval=e.target.value;});
+document.getElementById('speed').addEventListener('input', e=>{speed=parseInt(e.target.value);});
+document.getElementById('gridSize').addEventListener('change', e=>{
+  size = parseInt(e.target.value);
+  canvas.width = size*cell;
+  canvas.height = size*cell;
+  grid = Array.from({length:size}, ()=>Array(size).fill(0));
+  draw();
+});
+
+if('serviceWorker' in navigator){navigator.serviceWorker.register('service-worker.js');}
+
+draw();
+</script>
+</body>
+</html>
